@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+service/weights/
+service/outputs/
+*.egg-info/
+.claude/

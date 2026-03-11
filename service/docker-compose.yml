@@ -1,0 +1,11 @@
+services:
+  lediff:
+    build:
+      context: ..
+      dockerfile: service/backend/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - JOB_TTL_HOURS=24
+      - MAX_MEGAPIXELS=16
+    restart: unless-stopped

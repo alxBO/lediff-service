@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LEDiff</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>LEDiff</h1>
+        <p class="subtitle">HDR via Latent Diffusion</p>
+    </header>
+
+    <main>
+        <!-- Mode Selector -->
+        <section id="mode-section" class="panel">
+            <div class="mode-selector">
+                <label>
+                    <input type="radio" name="pipeline-mode" value="itm" checked>
+                    Inverse Tone Mapping <span class="hint">(Image &rarr; HDR)</span>
+                </label>
+                <label>
+                    <input type="radio" name="pipeline-mode" value="generation">
+                    HDR Generation <span class="hint">(.npy &rarr; HDR)</span>
+                </label>
+            </div>
+        </section>
+
+        <!-- Upload Zone -->
+        <section id="upload-section">
+            <div id="drop-zone" class="drop-zone">
+                <div class="drop-zone-content">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p id="drop-text">Drop images here<br><span class="hint">or click to browse (PNG, JPEG)</span></p>
+                </div>
+                <input type="file" id="file-input" accept="image/png,image/jpeg,image/jpg" multiple hidden>
+            </div>
+        </section>
+
+        <!-- Batch Queue -->
+        <section id="batch-section" class="panel hidden">
+            <h2>Batch Queue</h2>
+            <div id="batch-list"></div>
+        </section>
+
+        <!-- Input Info (ITM mode only) -->
+        <section id="input-info" class="panel hidden">
+            <h2>Input Image</h2>
+            <div class="info-grid">
+                <div class="info-preview">
+                    <img id="input-preview" alt="Input preview">
+                </div>
+                <div class="info-details">
+                    <div class="info-row">
+                        <span id="input-dims"></span>
+                        <span id="input-size"></span>
+                        <span id="input-format"></span>
+                    </div>
+                    <div class="info-row">
+                        <span>Dynamic Range: <strong id="input-dr"></strong></span>
+                        <span>Brightness: <strong id="input-brightness"></strong></span>
+                        <span>Clipping: <strong id="input-clipping"></strong></span>
+                    </div>
+                    <canvas id="histogram-canvas" width="400" height="120"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- NPY Info (Generation mode) -->
+        <section id="npy-info" class="panel hidden">
+            <h2>Latent Input</h2>
+            <div class="info-row">
+                <span id="npy-filename"></span>
+                <span id="npy-shape"></span>
+                <span id="npy-size"></span>
+            </div>
+        </section>
+
+        <!-- Generation Controls -->
+        <section id="controls" class="panel hidden">
+            <h3>Parameters</h3>
+            <div class="controls-grid">
+                <label class="control-label">
+                    Model
+                    <select id="model-select">
+                        <option value="highlight" selected>Highlight (overexposed recovery)</option>
+                        <option value="shadow">Shadow (underexposed recovery)</option>
+                    </select>
+                </label>
+                <label class="control-label control-checkbox">
+                    <input type="checkbox" id="tiling-checkbox" checked>
+                    Tiling <span class="hint">(process at full resolution)</span>
+                </label>
+                <label class="control-label control-wide">
+                    Prompt
+                    <textarea id="prompt-input" rows="2" placeholder="A photograph with natural lighting">A photograph with natural lighting</textarea>
+                </label>
+                <label class="control-label">
+                    Seed
+                    <div class="seed-row">
+                        <input type="number" id="seed-input" value="42" min="0" max="4294967295">
+                        <button id="seed-random" class="btn-small" title="Random seed">&#x1f3b2;</button>
+                    </div>
+                </label>
+                <label class="control-label">
+                    Inference Steps: <strong id="steps-val">50</strong>
+                    <input type="range" id="steps-slider" min="10" max="100" step="1" value="50">
+                </label>
+                <label class="control-label">
+                    Guidance Scale: <strong id="guidance-val">7.5</strong>
+                    <input type="range" id="guidance-slider" min="1.0" max="20.0" step="0.5" value="7.5">
+                </label>
+            </div>
+            <div class="controls-row" style="margin-top: 12px;">
+                <button id="generate-btn" class="btn-primary">Generate HDR</button>
+            </div>
+        </section>
+
+        <!-- Progress -->
+        <section id="progress-section" class="panel hidden">
+            <h2>Generation</h2>
+            <div id="queue-info" class="queue-info hidden">
+                <span id="queue-position-text"></span>
+            </div>
+            <div class="progress-bar-container">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+            <div class="progress-info">
+                <span id="progress-stage"></span>
+                <span id="progress-percent"></span>
+            </div>
+            <div class="progress-actions">
+                <button id="cancel-btn" class="btn-secondary">Cancel</button>
+            </div>
+        </section>
+
+        <!-- Error -->
+        <section id="error-section" class="panel hidden">
+            <div class="error-message">
+                <strong>Error:</strong> <span id="error-text"></span>
+            </div>
+        </section>
+
+        <!-- Result -->
+        <section id="result-section" class="panel hidden">
+            <h2>Result</h2>
+
+            <!-- A/B Comparison (ITM mode) -->
+            <div class="compare-container" id="compare-container">
+                <img id="compare-input" class="compare-img" alt="Input">
+                <canvas id="compare-canvas" class="compare-img compare-overlay"></canvas>
+                <div id="compare-slider" class="compare-slider">
+                    <div class="compare-slider-line"></div>
+                    <div class="compare-slider-handle">A|B</div>
+                </div>
+                <div class="compare-labels">
+                    <span class="compare-label-left">LDR</span>
+                    <span class="compare-label-right">HDR</span>
+                </div>
+            </div>
+
+            <h3>Preview</h3>
+            <div class="controls-row">
+                <label class="control-label">
+                    Exposure: <strong id="exposure-val">0.0</strong> EV
+                    <input type="range" id="exposure-slider" min="-5" max="5" step="0.1" value="0">
+                </label>
+                <label class="control-label">
+                    Tonemap:
+                    <select id="tonemap-select">
+                        <option value="linear" selected>Linear (clamp)</option>
+                        <option value="aces">ACES Filmic</option>
+                        <option value="reinhard">Reinhard</option>
+                    </select>
+                </label>
+                <label class="control-label">
+                    Gamma: <strong id="gamma-val">2.4</strong>
+                    <input type="range" id="gamma-slider" min="1.0" max="4.0" step="0.1" value="2.4">
+                </label>
+            </div>
+
+            <div class="result-details">
+                <div class="stat-grid">
+                    <div class="stat-row">
+                        <span class="stat-label">Dynamic Range</span>
+                        <span class="stat-value" id="result-dr"></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Peak Luminance</span>
+                        <span class="stat-value" id="result-peak"></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Mean Luminance</span>
+                        <span class="stat-value" id="result-mean"></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Processing Time</span>
+                        <span class="stat-value" id="result-time"></span>
+                    </div>
+                </div>
+                <canvas id="hdr-histogram-canvas" width="400" height="120"></canvas>
+                <div class="download-buttons">
+                    <a id="download-exr" class="btn-primary" download>Download EXR</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

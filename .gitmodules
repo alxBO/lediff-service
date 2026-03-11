@@ -1,0 +1,4 @@
+[submodule "vendor/LEDiff"]
+	path = vendor/LEDiff
+	url = https://github.com/Hans1984/LEDiff.git
+	ignore = dirty
