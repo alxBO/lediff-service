@@ -230,17 +230,6 @@ canvas {
     width: 100%;
 }
 
-.control-checkbox {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-}
-.control-checkbox input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent);
-    cursor: pointer;
-}
 
 .seed-row {
     display: flex;

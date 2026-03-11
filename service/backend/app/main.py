@@ -150,6 +150,9 @@ async def health():
         "available_models": pipeline.available_model_types,
         "current_model": pipeline.current_model_type,
         "device": str(pipeline.device),
+        "vram_gb": round(pipeline.vram_gb, 1),
+        "auto_tile_size": pipeline.auto_tile_size,
+        "tile_sizes": [512, 768, 1024],
         "queue_size": app.state.job_queue.size,
     }
 

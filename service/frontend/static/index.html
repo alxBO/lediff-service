@@ -92,9 +92,15 @@
                         <option value="shadow">Shadow (underexposed recovery)</option>
                     </select>
                 </label>
-                <label class="control-label control-checkbox">
-                    <input type="checkbox" id="tiling-checkbox" checked>
-                    Tiling <span class="hint">(process at full resolution)</span>
+                <label class="control-label">
+                    Tile Size
+                    <select id="tile-size-select">
+                        <option value="0" selected>Auto</option>
+                        <option value="1024">1024 (fast, ~12 GB)</option>
+                        <option value="768">768 (balanced, ~7 GB)</option>
+                        <option value="512">512 (safe, ~4 GB)</option>
+                        <option value="-1">Off (resize to single tile)</option>
+                    </select>
                 </label>
                 <label class="control-label control-wide">
                     Prompt

@@ -325,7 +325,9 @@ $('#generate-btn').addEventListener('click', async () => {
     const seed = parseInt($('#seed-input').value) || 42;
     const num_inference_steps = parseInt($('#steps-slider').value);
     const guidance_scale = parseFloat($('#guidance-slider').value);
-    const tiling = $('#tiling-checkbox').checked;
+    const tileSizeVal = parseInt($('#tile-size-select').value);
+    const tiling = tileSizeVal >= 0;
+    const tile_size = tileSizeVal >= 0 ? tileSizeVal : 0;
 
     hide($('#error-section'));
     hide($('#result-section'));
@@ -337,7 +339,7 @@ $('#generate-btn').addEventListener('click', async () => {
         const resp = await fetch(`/api/generate/${currentJobId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode, model_type, prompt, seed, num_inference_steps, guidance_scale, tiling }),
+            body: JSON.stringify({ mode, model_type, prompt, seed, num_inference_steps, guidance_scale, tiling, tile_size }),
         });
 
         if (!resp.ok) {
@@ -377,14 +379,16 @@ async function processBatchNext() {
     const seed = parseInt($('#seed-input').value) || 42;
     const num_inference_steps = parseInt($('#steps-slider').value);
     const guidance_scale = parseFloat($('#guidance-slider').value);
-    const tiling = $('#tiling-checkbox').checked;
+    const tileSizeVal = parseInt($('#tile-size-select').value);
+    const tiling = tileSizeVal >= 0;
+    const tile_size = tileSizeVal >= 0 ? tileSizeVal : 0;
     const jobId = currentJobId;
 
     try {
         const resp = await fetch(`/api/generate/${jobId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode, model_type, prompt, seed, num_inference_steps, guidance_scale, tiling }),
+            body: JSON.stringify({ mode, model_type, prompt, seed, num_inference_steps, guidance_scale, tiling, tile_size }),
         });
 
         if (!resp.ok) {
@@ -869,6 +873,21 @@ function drawHdrHistogram(canvas, histData) {
     ctx.fillText('log\u2081\u2080(luminance)', w / 2, 10);
     ctx.textAlign = 'left';
 }
+
+// --- Init: fetch server capabilities ---
+(async function initCapabilities() {
+    try {
+        const resp = await fetch('/api/health');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const autoTile = data.auto_tile_size || 512;
+        const vram = data.vram_gb || 0;
+        const autoOption = $('#tile-size-select').querySelector('option[value="0"]');
+        if (autoOption) {
+            autoOption.textContent = `Auto (${autoTile}px` + (vram > 0 ? `, ${vram} GB` : '') + ')';
+        }
+    } catch (e) { /* ignore */ }
+})();
 
 // --- Utilities ---
 function formatBytes(bytes) {

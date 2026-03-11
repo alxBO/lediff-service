@@ -172,6 +172,7 @@ class JobQueue:
                 num_inference_steps=req.num_inference_steps,
                 guidance_scale=req.guidance_scale,
                 tiling=req.tiling,
+                tile_size=req.tile_size,
                 progress_cb=progress_cb,
             )
 

@@ -26,12 +26,18 @@ import OpenEXR
 
 logger = logging.getLogger(__name__)
 
-TILE_SIZE = 512
-TILE_OVERLAP = 128  # pixels of overlap between adjacent tiles
+# Tile size presets and VRAM thresholds (GB)
+TILE_SIZES = [512, 768, 1024]
+TILE_VRAM_THRESHOLDS = {
+    512: 0,     # always safe
+    768: 8,     # needs ~7 GB
+    1024: 14,   # needs ~12 GB
+}
+DEFAULT_TILE_OVERLAP = 128  # pixels of overlap between adjacent tiles
 
 
 # ---------------------------------------------------------------------------
-# Device detection
+# Device detection & VRAM
 # ---------------------------------------------------------------------------
 
 def _get_device() -> torch.device:
@@ -40,6 +46,28 @@ def _get_device() -> torch.device:
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
+
+def _get_vram_gb(device: torch.device) -> float:
+    """Return total VRAM in GB. Returns 0 if unknown."""
+    if device.type == "cuda":
+        props = torch.cuda.get_device_properties(device)
+        return props.total_mem / (1024 ** 3)
+    if device.type == "mps":
+        # Apple Silicon — shared memory, assume conservative 10 GB usable
+        return 10.0
+    return 0.0
+
+
+def _auto_tile_size(device: torch.device) -> int:
+    """Pick the largest tile size that fits in VRAM."""
+    vram = _get_vram_gb(device)
+    best = 512
+    for size in TILE_SIZES:
+        if vram >= TILE_VRAM_THRESHOLDS[size]:
+            best = size
+    logger.info("Auto tile size: %d (VRAM=%.1f GB)", best, vram)
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +251,8 @@ class LEDiffPipeline:
         self._weights_dir = weights_dir
         self._available_models = available_models
         self._current_model_type: Optional[str] = None
+        self._auto_tile_size = _auto_tile_size(self.device)
+        self._vram_gb = _get_vram_gb(self.device)
 
         self._pipe = None
         self.vae = None
@@ -235,8 +265,8 @@ class LEDiffPipeline:
         self.fusion = None
 
         logger.info(
-            "LEDiffPipeline initialized (device=%s, available models: %s)",
-            self.device, list(available_models.keys()),
+            "LEDiffPipeline initialized (device=%s, vram=%.1fGB, auto_tile=%d, available models: %s)",
+            self.device, self._vram_gb, self._auto_tile_size, list(available_models.keys()),
         )
 
     def _load_model(self, model_type: str):
@@ -307,6 +337,14 @@ class LEDiffPipeline:
     def available_model_types(self) -> list:
         return list(self._available_models.keys())
 
+    @property
+    def auto_tile_size(self) -> int:
+        return self._auto_tile_size
+
+    @property
+    def vram_gb(self) -> float:
+        return self._vram_gb
+
     def close(self):
         with self._lock:
             self._unload_model()
@@ -317,6 +355,17 @@ class LEDiffPipeline:
     # -------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------
+
+    def _resolve_tile_size(self, tile_size: int) -> int:
+        """Resolve tile_size: 0 = auto, otherwise clamp to valid values."""
+        if tile_size <= 0:
+            return self._auto_tile_size
+        # Clamp to nearest valid size
+        valid = sorted(TILE_SIZES)
+        for s in reversed(valid):
+            if tile_size >= s:
+                return s
+        return valid[0]
 
     @torch.no_grad()
     def run(
@@ -329,16 +378,18 @@ class LEDiffPipeline:
         num_inference_steps: int,
         guidance_scale: float,
         tiling: bool = True,
+        tile_size: int = 0,
         progress_cb: Callable = lambda *a: None,
     ) -> np.ndarray:
         with self._lock:
             try:
                 self._load_model(model_type)
+                resolved_tile_size = self._resolve_tile_size(tile_size)
                 if mode == "itm":
                     return self._run_itm(
                         input_data, prompt, seed,
                         num_inference_steps, guidance_scale, progress_cb,
-                        tiling=tiling,
+                        tiling=tiling, tile_size=resolved_tile_size,
                     )
                 elif mode == "generation":
                     return self._run_generation(
@@ -355,20 +406,19 @@ class LEDiffPipeline:
     # ITM mode (tiled)
     # -------------------------------------------------------------------
 
-    def _run_itm(self, img_bytes, prompt, seed, steps, guidance_scale, progress_cb, tiling=True):
+    def _run_itm(self, img_bytes, prompt, seed, steps, guidance_scale, progress_cb, tiling=True, tile_size=512):
         device = self.device
 
         progress_cb("preprocessing", 0.02, "Decoding image...")
         ldr_full = _decode_image_bytes(img_bytes)
         h, w = ldr_full.shape[:2]
 
-        if not tiling or (h <= TILE_SIZE and w <= TILE_SIZE):
-            # No tiling: resize to 512x512, process as single tile, resize back
-            return self._run_itm_no_tiling(ldr_full, prompt, seed, steps, guidance_scale, progress_cb)
+        if not tiling or (h <= tile_size and w <= tile_size):
+            # No tiling: resize to tile_size x tile_size, process as single tile, resize back
+            return self._run_itm_no_tiling(ldr_full, prompt, seed, steps, guidance_scale, progress_cb, tile_size=tile_size)
 
         # Compute tile grid
-        tile_size = TILE_SIZE
-        overlap = TILE_OVERLAP
+        overlap = DEFAULT_TILE_OVERLAP
         stride = tile_size - overlap
 
         tiles_y, tiles_x, pad_h, pad_w = _compute_tile_grid(h, w, tile_size, overlap)
@@ -380,8 +430,8 @@ class LEDiffPipeline:
         else:
             ldr_padded = ldr_full
 
-        logger.info("Tiled inference: %dx%d image -> %dx%d grid (%d tiles), pad=(%d,%d)",
-                     w, h, tiles_x, tiles_y, total_tiles, pad_w, pad_h)
+        logger.info("Tiled inference: %dx%d image -> %dx%d grid (%d tiles of %dpx), pad=(%d,%d)",
+                     w, h, tiles_x, tiles_y, total_tiles, tile_size, pad_w, pad_h)
 
         # Encode prompt once (shared across all tiles)
         progress_cb("encoding", 0.04, "Encoding prompt...")
@@ -440,13 +490,13 @@ class LEDiffPipeline:
         progress_cb("postprocessing", 0.95, "HDR generation complete")
         return hdr_blended
 
-    def _run_itm_no_tiling(self, ldr_full, prompt, seed, steps, guidance_scale, progress_cb):
-        """Process image without tiling — resizes to 512x512, then resizes output back."""
+    def _run_itm_no_tiling(self, ldr_full, prompt, seed, steps, guidance_scale, progress_cb, tile_size=512):
+        """Process image without tiling — resizes to tile_size x tile_size, then resizes output back."""
         h_orig, w_orig = ldr_full.shape[:2]
 
-        # Resize to 512x512
-        ldr_resized = cv2.resize(ldr_full, (TILE_SIZE, TILE_SIZE), interpolation=cv2.INTER_AREA)
-        logger.info("No-tiling inference: %dx%d -> %dx%d", w_orig, h_orig, TILE_SIZE, TILE_SIZE)
+        # Resize to tile_size x tile_size
+        ldr_resized = cv2.resize(ldr_full, (tile_size, tile_size), interpolation=cv2.INTER_AREA)
+        logger.info("No-tiling inference: %dx%d -> %dx%d", w_orig, h_orig, tile_size, tile_size)
 
         progress_cb("encoding", 0.04, "Encoding prompt...")
         prompt_embeds, negative_prompt_embeds = self._encode_prompt(prompt)
@@ -482,8 +532,9 @@ class LEDiffPipeline:
         guidance_scale: float,
         progress_cb: Callable,
     ) -> np.ndarray:
-        """Process a single 512x512 tile through the full LEDiff pipeline.
+        """Process a single tile through the full LEDiff pipeline.
 
+        Tile can be any size divisible by 8 (VAE requirement).
         Returns float32 HDR tile (after exp()).
         """
         device = self.device
@@ -492,14 +543,17 @@ class LEDiffPipeline:
         image_tensor = _numpy_to_tensor(tile_ldr_01, device)
         latents_tensor = self.vae.encode(image_tensor).latent_dist.mode() * self.vae.config.scaling_factor
 
-        # Prepare random latents
+        # Latent spatial dimensions (tile_pixels / 8)
+        latent_h, latent_w = latents_tensor.shape[2], latents_tensor.shape[3]
+
+        # Prepare random latents matching tile size
         self.scheduler.set_timesteps(steps, device=device)
         timesteps = self.scheduler.timesteps
 
         torch.manual_seed(seed)
-        latents = self._prepare_latents(combined_embeds.dtype)
+        latents = self._prepare_latents(combined_embeds.dtype, latent_h, latent_w)
         torch.manual_seed(seed + 22)
-        latents_low = self._prepare_latents(combined_embeds.dtype)
+        latents_low = self._prepare_latents(combined_embeds.dtype, latent_h, latent_w)
 
         # Denoising loop 1: medium exposure
         progress_cb("denoising", 0.05, "Medium exposure...")
@@ -647,8 +701,8 @@ class LEDiffPipeline:
         negative_embeds = self.text_encoder(uncond_tokens.input_ids.to(device))[0]
         return prompt_embeds, negative_embeds
 
-    def _prepare_latents(self, dtype):
-        shape = (1, 4, 64, 64)
+    def _prepare_latents(self, dtype, latent_h=64, latent_w=64):
+        shape = (1, 4, latent_h, latent_w)
         if self.device.type == "mps":
             latents = torch.randn(shape, dtype=dtype, device="cpu").to(self.device)
         else:

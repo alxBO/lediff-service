@@ -28,6 +28,7 @@ class GenerateRequest(BaseModel):
     num_inference_steps: int = Field(default=50, ge=10, le=100)
     guidance_scale: float = Field(default=7.5, ge=1.0, le=20.0)
     tiling: bool = True
+    tile_size: int = Field(default=0, ge=0, le=1024)  # 0 = auto
 
 
 class ProgressEvent(BaseModel):
