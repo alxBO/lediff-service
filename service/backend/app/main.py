@@ -262,6 +262,20 @@ async def cancel(job_id: str):
         raise HTTPException(409, "Job is not queued or processing")
 
 
+@app.get("/api/status-poll/{job_id}")
+async def status_poll(job_id: str):
+    """Polling fallback for progress — works through any proxy."""
+    if job_id not in app.state.jobs:
+        raise HTTPException(404, "Job not found")
+    job = app.state.jobs[job_id]
+    return {
+        "stage": job.stage,
+        "progress": round(job.progress, 3),
+        "message": job.message,
+        "queue_position": job.queue_position,
+    }
+
+
 @app.get("/api/status/{job_id}")
 async def status_sse(job_id: str):
     if job_id not in app.state.jobs:

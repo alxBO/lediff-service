@@ -437,25 +437,47 @@ async function processBatchNext() {
 function waitForCompletion(jobId) {
     return new Promise((resolve) => {
         let done = false;
-        let lastMessage = '';
-        const es = new EventSource(`/api/status/${jobId}`);
+        let gotSSE = false;
+        let poll = null;
 
         function finish(result) {
             if (done) return;
             done = true;
-            es.close();
+            if (es) es.close();
+            if (poll) clearInterval(poll);
             resolve(result);
         }
 
-        es.onmessage = (e) => {
-            const data = JSON.parse(e.data);
+        function handleData(data) {
             updateProgress(data);
-            lastMessage = data.message || '';
             if (data.stage === 'complete') finish({ ok: true });
             else if (data.stage === 'error') finish({ ok: false, message: data.message });
             else if (data.stage === 'cancelled') finish({ ok: false, message: 'Cancelled' });
+        }
+
+        const es = new EventSource(`/api/status/${jobId}`);
+        es.onmessage = (e) => {
+            gotSSE = true;
+            if (poll) { clearInterval(poll); poll = null; }
+            handleData(JSON.parse(e.data));
         };
-        es.onerror = () => finish({ ok: false, message: lastMessage || 'Server connection lost' });
+        es.onerror = () => {
+            es.close();
+            if (!gotSSE && !poll) startPoll();
+        };
+
+        function startPoll() {
+            poll = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/status-poll/${jobId}`);
+                    if (!resp.ok) return;
+                    handleData(await resp.json());
+                } catch (e) { /* ignore */ }
+            }, 500);
+        }
+
+        // Fallback to polling if no SSE within 3s
+        setTimeout(() => { if (!gotSSE && !done) startPoll(); }, 3000);
     });
 }
 
@@ -467,37 +489,71 @@ $('#cancel-btn').addEventListener('click', async () => {
     } catch (e) { /* ignore */ }
 });
 
-// --- SSE Progress (single mode) ---
+// --- Progress tracking (SSE with polling fallback) ---
+let pollTimer = null;
+
 function startSSE(jobId) {
     if (evtSource) evtSource.close();
+    stopPolling();
+
+    let gotSSE = false;
 
     evtSource = new EventSource(`/api/status/${jobId}`);
     evtSource.onmessage = (e) => {
+        gotSSE = true;
+        stopPolling(); // SSE works, no need for polling
         const data = JSON.parse(e.data);
-        updateProgress(data);
-
-        if (data.stage === 'complete') {
-            evtSource.close();
-            evtSource = null;
-            loadResult(jobId);
-        } else if (data.stage === 'error') {
-            evtSource.close();
-            evtSource = null;
-            showError(data.message);
-            hide($('#progress-section'));
-            $('#generate-btn').disabled = false;
-        } else if (data.stage === 'cancelled') {
-            evtSource.close();
-            evtSource = null;
-            hide($('#progress-section'));
-            $('#generate-btn').disabled = false;
-        }
+        handleProgressData(data, jobId);
     };
 
     evtSource.onerror = () => {
         evtSource.close();
         evtSource = null;
+        // SSE failed — switch to polling
+        if (!gotSSE) startPolling(jobId);
     };
+
+    // If no SSE event within 3s, start polling as fallback
+    setTimeout(() => {
+        if (!gotSSE) startPolling(jobId);
+    }, 3000);
+}
+
+function startPolling(jobId) {
+    if (pollTimer) return; // already polling
+    pollTimer = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/status-poll/${jobId}`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            handleProgressData(data, jobId);
+        } catch (e) { /* ignore */ }
+    }, 500);
+}
+
+function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function handleProgressData(data, jobId) {
+    updateProgress(data);
+
+    if (data.stage === 'complete') {
+        if (evtSource) { evtSource.close(); evtSource = null; }
+        stopPolling();
+        loadResult(jobId);
+    } else if (data.stage === 'error') {
+        if (evtSource) { evtSource.close(); evtSource = null; }
+        stopPolling();
+        showError(data.message);
+        hide($('#progress-section'));
+        $('#generate-btn').disabled = false;
+    } else if (data.stage === 'cancelled') {
+        if (evtSource) { evtSource.close(); evtSource = null; }
+        stopPolling();
+        hide($('#progress-section'));
+        $('#generate-btn').disabled = false;
+    }
 }
 
 function updateProgress(data) {
