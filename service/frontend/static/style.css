@@ -535,6 +535,45 @@ canvas {
     margin-top: 0;
 }
 
+/* Comparison table */
+.compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.compare-table th {
+    text-align: right;
+    padding: 6px 10px;
+    color: var(--text-dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+}
+
+.compare-table th:first-child {
+    text-align: left;
+}
+
+.compare-table td {
+    text-align: right;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.compare-table td:first-child {
+    text-align: left;
+    color: var(--text-dim);
+}
+
+.compare-table .stat-boost {
+    font-weight: 600;
+    color: var(--accent);
+}
+
 /* Responsive */
 @media (max-width: 640px) {
     .info-grid {

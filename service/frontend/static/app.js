@@ -10,6 +10,7 @@ let evtSource = null;
 // Client-side HDR data for tone mapping
 let hdrData = null; // { width, height, pixels: Float32Array }
 let inputLocalUrl = null;
+let inputLinearMetrics = null;
 
 // Batch state
 let batchQueue = []; // [{ file, jobId, status, data, errorMsg }]
@@ -278,6 +279,18 @@ function displayInputInfo(data) {
     $('#input-dr').textContent = `${data.dynamic_range_ev.toFixed(1)} EV`;
     $('#input-brightness').textContent = `${data.mean_brightness.toFixed(0)} / 255`;
     $('#input-clipping').textContent = `${data.clipping_percent.toFixed(1)}%`;
+
+    // Linear-domain metrics (same space as HDR output)
+    $('#input-mean-linear').textContent = data.mean_luminance_linear.toFixed(4);
+    $('#input-peak-linear').textContent = data.peak_luminance_linear.toFixed(4);
+
+    // Store for comparison with HDR result
+    inputLinearMetrics = {
+        mean: data.mean_luminance_linear,
+        peak: data.peak_luminance_linear,
+        contrast: data.contrast_ratio,
+    };
+
     if (data.histogram) {
         drawHistogram($('#histogram-canvas'), data.histogram);
     }
@@ -598,13 +611,49 @@ async function loadResult(jobId) {
 }
 
 function displayResult(data) {
-    $('#result-dr').textContent = data.analysis.dynamic_range_ev.toFixed(1) + ' EV';
-    $('#result-peak').textContent = data.analysis.peak_luminance.toFixed(2);
-    $('#result-mean').textContent = data.analysis.mean_luminance.toFixed(4);
+    const a = data.analysis;
     $('#result-time').textContent = data.processing_time_seconds.toFixed(1) + 's';
+    $('#result-dr').textContent = a.dynamic_range_ev.toFixed(1) + ' EV';
 
-    if (data.analysis.hdr_histogram && data.analysis.hdr_histogram.counts.length > 0) {
-        drawHdrHistogram($('#hdr-histogram-canvas'), data.analysis.hdr_histogram);
+    // Percentiles
+    const p = a.luminance_percentiles;
+    if (p) {
+        $('#result-percentiles').textContent =
+            `${(p['50'] || 0).toFixed(4)} / ${(p['90'] || 0).toFixed(4)} / ${(p['99'] || 0).toFixed(4)}`;
+    }
+
+    // Fill comparison table (SDR input vs HDR output, both in linear domain)
+    const inM = inputLinearMetrics;
+    if (inM) {
+        $('#cmp-input-mean').textContent = inM.mean.toFixed(4);
+        $('#cmp-output-mean').textContent = a.mean_luminance.toFixed(4);
+        const ratioMean = inM.mean > 0 ? a.mean_luminance / inM.mean : 0;
+        $('#cmp-ratio-mean').textContent = ratioMean.toFixed(2) + 'x';
+
+        $('#cmp-input-peak').textContent = inM.peak.toFixed(4);
+        $('#cmp-output-peak').textContent = a.peak_luminance.toFixed(4);
+        const ratioPeak = inM.peak > 0 ? a.peak_luminance / inM.peak : 0;
+        $('#cmp-ratio-peak').textContent = ratioPeak.toFixed(2) + 'x';
+
+        // Contrast ratio (P99.9 / P0.1)
+        $('#cmp-input-contrast').textContent = formatContrast(inM.contrast);
+        $('#cmp-output-contrast').textContent = formatContrast(a.contrast_ratio);
+        const ratioContrast = inM.contrast > 0 ? a.contrast_ratio / inM.contrast : 0;
+        $('#cmp-ratio-contrast').textContent = ratioContrast.toFixed(1) + 'x';
+    } else {
+        $('#cmp-input-mean').textContent = '—';
+        $('#cmp-output-mean').textContent = a.mean_luminance.toFixed(4);
+        $('#cmp-ratio-mean').textContent = '—';
+        $('#cmp-input-peak').textContent = '—';
+        $('#cmp-output-peak').textContent = a.peak_luminance.toFixed(4);
+        $('#cmp-ratio-peak').textContent = '—';
+        $('#cmp-input-contrast').textContent = '—';
+        $('#cmp-output-contrast').textContent = formatContrast(a.contrast_ratio);
+        $('#cmp-ratio-contrast').textContent = '—';
+    }
+
+    if (a.hdr_histogram && a.hdr_histogram.counts.length > 0) {
+        drawHdrHistogram($('#hdr-histogram-canvas'), a.hdr_histogram);
     }
 
     $('#download-exr').href = data.download_url;
@@ -616,7 +665,6 @@ function displayResult(data) {
         const img = $('#compare-input');
         img.src = inputLocalUrl;
         compareContainer.style.display = '';
-        // Wait for image to load so canvas can match its display size
         img.onload = () => {
             applyClientTonemap();
             initCompareSlider();
@@ -626,6 +674,11 @@ function displayResult(data) {
     }
 
     show($('#result-section'));
+}
+
+function formatContrast(ratio) {
+    if (ratio >= 1000) return (ratio / 1000).toFixed(1) + 'k:1';
+    return ratio.toFixed(0) + ':1';
 }
 
 // --- Client-side Tone Mapping ---

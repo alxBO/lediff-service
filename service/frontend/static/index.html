@@ -66,6 +66,10 @@
                         <span>Brightness: <strong id="input-brightness"></strong></span>
                         <span>Clipping: <strong id="input-clipping"></strong></span>
                     </div>
+                    <div class="info-row">
+                        <span>Mean Lum (linear): <strong id="input-mean-linear"></strong></span>
+                        <span>Peak Lum (linear): <strong id="input-peak-linear"></strong></span>
+                    </div>
                     <canvas id="histogram-canvas" width="400" height="120"></canvas>
                 </div>
             </div>
@@ -191,18 +195,47 @@
             </div>
 
             <div class="result-details">
+                <h3>Luminance comparison (linear)</h3>
+                <table class="compare-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>SDR Input</th>
+                            <th>HDR Output</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="stat-label">Mean Luminance</td>
+                            <td id="cmp-input-mean">—</td>
+                            <td id="cmp-output-mean">—</td>
+                            <td id="cmp-ratio-mean" class="stat-boost">—</td>
+                        </tr>
+                        <tr>
+                            <td class="stat-label">Peak Luminance</td>
+                            <td id="cmp-input-peak">—</td>
+                            <td id="cmp-output-peak">—</td>
+                            <td id="cmp-ratio-peak" class="stat-boost">—</td>
+                        </tr>
+                        <tr>
+                            <td class="stat-label">Contrast (P99.9/P0.1)</td>
+                            <td id="cmp-input-contrast">—</td>
+                            <td id="cmp-output-contrast">—</td>
+                            <td id="cmp-ratio-contrast" class="stat-boost">—</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>HDR output</h3>
                 <div class="stat-grid">
                     <div class="stat-row">
                         <span class="stat-label">Dynamic Range</span>
                         <span class="stat-value" id="result-dr"></span>
                     </div>
                     <div class="stat-row">
-                        <span class="stat-label">Peak Luminance</span>
-                        <span class="stat-value" id="result-peak"></span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Mean Luminance</span>
-                        <span class="stat-value" id="result-mean"></span>
+                        <span class="stat-label">P50 / P90 / P99</span>
+                        <span class="stat-value" id="result-percentiles"></span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Processing Time</span>

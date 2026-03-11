@@ -30,6 +30,22 @@ def analyze_sdr(img_bytes: bytes, file_size: int, filename: str) -> dict:
     mean_brightness = float(np.mean(gray))
     median_brightness = float(np.median(gray))
 
+    # Linear luminance (same space as HDR output for direct comparison)
+    # Gamma decode (sRGB ≈ 2.2) then Rec.709 luminance
+    img_linear = np.power(img_rgb.astype(np.float32) / 255.0, 2.2)
+    lum_linear = _luminance(img_linear)
+    mean_luminance_linear = float(np.mean(lum_linear))
+    peak_luminance_linear = float(np.max(lum_linear))
+
+    # Contrast ratio in linear domain (P99.9 / P0.1)
+    positive_lum = lum_linear[lum_linear > 0]
+    if positive_lum.size > 0:
+        p_low = float(np.percentile(positive_lum, 0.1))
+        p_high = float(np.percentile(positive_lum, 99.9))
+        contrast_ratio = p_high / p_low if p_low > 0 else 0.0
+    else:
+        contrast_ratio = 0.0
+
     # Dynamic range in EV (from non-zero luminance values)
     positive_gray = gray[gray > 0]
     if positive_gray.size > 0:
@@ -53,6 +69,9 @@ def analyze_sdr(img_bytes: bytes, file_size: int, filename: str) -> dict:
         "mean_brightness": round(mean_brightness, 1),
         "median_brightness": round(median_brightness, 1),
         "clipping_percent": round(clipping_percent, 2),
+        "mean_luminance_linear": round(mean_luminance_linear, 4),
+        "peak_luminance_linear": round(peak_luminance_linear, 4),
+        "contrast_ratio": round(contrast_ratio, 1),
     }
 
 
@@ -71,8 +90,10 @@ def analyze_hdr(hdr_img: np.ndarray) -> dict:
         lum_low = float(np.percentile(positive, 0.1))
         lum_high = float(np.percentile(positive, 99.9))
         dynamic_range_ev = float(np.log2(lum_high / lum_low)) if lum_low > 0 else 0.0
+        contrast_ratio = lum_high / lum_low if lum_low > 0 else 0.0
     else:
         dynamic_range_ev = 0.0
+        contrast_ratio = 0.0
 
     peak_luminance = float(hdr_img.max())
     mean_luminance = float(np.mean(lum))
@@ -99,6 +120,7 @@ def analyze_hdr(hdr_img: np.ndarray) -> dict:
         "dynamic_range_ev": round(dynamic_range_ev, 1),
         "peak_luminance": round(peak_luminance, 4),
         "mean_luminance": round(mean_luminance, 4),
+        "contrast_ratio": round(contrast_ratio, 1),
         "luminance_percentiles": percentiles,
         "hdr_histogram": hdr_histogram,
     }
