@@ -267,7 +267,14 @@ async def status_sse(job_id: str):
     if job_id not in app.state.jobs:
         raise HTTPException(404, "Job not found")
 
+    # Padding to flush proxy buffers (Cloudflare, nginx, etc.)
+    # Many reverse proxies buffer the first ~1KB before flushing.
+    PADDING_COMMENT = f": {' ' * 2048}\n\n"
+
     async def event_stream():
+        # Initial padding to force proxy buffer flush
+        yield PADDING_COMMENT
+
         job = app.state.jobs[job_id]
         last_sent = None
         while True:
@@ -291,9 +298,10 @@ async def status_sse(job_id: str):
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "Content-Type": "text/event-stream; charset=utf-8",
         },
     )
 
