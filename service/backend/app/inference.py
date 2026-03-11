@@ -52,7 +52,7 @@ def _get_vram_gb(device: torch.device) -> float:
     """Return total VRAM in GB. Returns 0 if unknown."""
     if device.type == "cuda":
         props = torch.cuda.get_device_properties(device)
-        return props.total_mem / (1024 ** 3)
+        return props.total_memory / (1024 ** 3)
     if device.type == "mps":
         # Apple Silicon — shared memory, assume conservative 10 GB usable
         return 10.0
