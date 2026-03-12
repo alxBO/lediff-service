@@ -19,6 +19,7 @@ class UploadResponse(BaseModel):
     mean_luminance_linear: float = 0.0
     peak_luminance_linear: float = 0.0
     contrast_ratio: float = 0.0
+    min_luminance_linear: float = 0.0
     # For .npy uploads (generation mode)
     npy_shape: Optional[List[int]] = None
 
@@ -44,6 +45,7 @@ class ProgressEvent(BaseModel):
 class HdrAnalysis(BaseModel):
     dynamic_range_ev: float
     contrast_ratio: float
+    min_luminance: float = 0.0
     peak_luminance: float
     mean_luminance: float
     luminance_percentiles: Dict[str, float]

@@ -62,7 +62,7 @@
                         <span id="input-format"></span>
                     </div>
                     <div class="info-row">
-                        <span>Dynamic Range: <strong id="input-dr"></strong></span>
+                        <span>Dynamic Range (linear): <strong id="input-dr"></strong></span>
                         <span>Brightness: <strong id="input-brightness"></strong></span>
                         <span>Clipping: <strong id="input-clipping"></strong></span>
                     </div>
@@ -163,6 +163,7 @@
             <!-- A/B Comparison (ITM mode) -->
             <div class="compare-container" id="compare-container">
                 <img id="compare-input" class="compare-img" alt="Input">
+                <canvas id="compare-sdr-canvas" class="compare-img compare-sdr"></canvas>
                 <canvas id="compare-canvas" class="compare-img compare-overlay"></canvas>
                 <div id="compare-slider" class="compare-slider">
                     <div class="compare-slider-line"></div>
@@ -192,6 +193,13 @@
                     Gamma: <strong id="gamma-val">2.4</strong>
                     <input type="range" id="gamma-slider" min="1.0" max="4.0" step="0.1" value="2.4">
                 </label>
+                <label class="control-label toggle-label">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="sdr-exposure-toggle">
+                        <span class="toggle-track"></span>
+                    </span>
+                    Apply exposure to SDR
+                </label>
             </div>
 
             <div class="result-details">
@@ -206,6 +214,12 @@
                         </tr>
                     </thead>
                     <tbody>
+                        <tr>
+                            <td class="stat-label">Min Luminance (P0.1)</td>
+                            <td id="cmp-input-min">&mdash;</td>
+                            <td id="cmp-output-min">&mdash;</td>
+                            <td id="cmp-ratio-min" class="stat-boost">&mdash;</td>
+                        </tr>
                         <tr>
                             <td class="stat-label">Mean Luminance</td>
                             <td id="cmp-input-mean">—</td>
@@ -230,7 +244,7 @@
                 <h3>HDR output</h3>
                 <div class="stat-grid">
                     <div class="stat-row">
-                        <span class="stat-label">Dynamic Range</span>
+                        <span class="stat-label">Dynamic Range (linear)</span>
                         <span class="stat-value" id="result-dr"></span>
                     </div>
                     <div class="stat-row">

@@ -37,21 +37,18 @@ def analyze_sdr(img_bytes: bytes, file_size: int, filename: str) -> dict:
     mean_luminance_linear = float(np.mean(lum_linear))
     peak_luminance_linear = float(np.max(lum_linear))
 
-    # Contrast ratio in linear domain (P99.9 / P0.1)
+    # Linear luminance percentiles for DR, contrast, and min luminance
     positive_lum = lum_linear[lum_linear > 0]
     if positive_lum.size > 0:
         p_low = float(np.percentile(positive_lum, 0.1))
         p_high = float(np.percentile(positive_lum, 99.9))
         contrast_ratio = p_high / p_low if p_low > 0 else 0.0
+        dynamic_range_ev = float(np.log2(p_high / p_low)) if p_low > 0 else 0.0
+        min_luminance_linear = p_low
     else:
         contrast_ratio = 0.0
-
-    # Dynamic range in EV (from non-zero luminance values)
-    positive_gray = gray[gray > 0]
-    if positive_gray.size > 0:
-        dynamic_range_ev = float(np.log2(positive_gray.max() / positive_gray.min()))
-    else:
         dynamic_range_ev = 0.0
+        min_luminance_linear = 0.0
 
     ext = filename.rsplit('.', 1)[-1].upper() if '.' in filename else 'UNKNOWN'
 
@@ -72,6 +69,7 @@ def analyze_sdr(img_bytes: bytes, file_size: int, filename: str) -> dict:
         "mean_luminance_linear": round(mean_luminance_linear, 4),
         "peak_luminance_linear": round(peak_luminance_linear, 4),
         "contrast_ratio": round(contrast_ratio, 1),
+        "min_luminance_linear": round(min_luminance_linear, 6),
     }
 
 
@@ -91,9 +89,11 @@ def analyze_hdr(hdr_img: np.ndarray) -> dict:
         lum_high = float(np.percentile(positive, 99.9))
         dynamic_range_ev = float(np.log2(lum_high / lum_low)) if lum_low > 0 else 0.0
         contrast_ratio = lum_high / lum_low if lum_low > 0 else 0.0
+        min_luminance = lum_low
     else:
         dynamic_range_ev = 0.0
         contrast_ratio = 0.0
+        min_luminance = 0.0
 
     peak_luminance = float(hdr_img.max())
     mean_luminance = float(np.mean(lum))
@@ -121,6 +121,7 @@ def analyze_hdr(hdr_img: np.ndarray) -> dict:
         "peak_luminance": round(peak_luminance, 4),
         "mean_luminance": round(mean_luminance, 4),
         "contrast_ratio": round(contrast_ratio, 1),
+        "min_luminance": round(min_luminance, 6),
         "luminance_percentiles": percentiles,
         "hdr_histogram": hdr_histogram,
     }
