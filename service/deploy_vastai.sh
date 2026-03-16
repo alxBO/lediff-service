@@ -85,5 +85,6 @@ cd "$SCRIPT_DIR/backend"
 export LEDIFF_WEIGHTS_DIR="$SCRIPT_DIR/weights"
 export MAX_MEGAPIXELS=50
 export JOB_TTL_HOURS=24
+export OPENBLAS_NUM_THREADS=1
 
 exec uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1
